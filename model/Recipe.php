@@ -47,7 +47,7 @@ class Recipe{
             GROUP_CONCAT(ing.image_url SEPARATOR '|||') AS ingredients_images,
             GROUP_CONCAT(inr.quantity SEPARATOR '|||') AS ingredients_quantities,
             inr.recipe_id AS inr_recipe_id
-          FROM `ingredient_recipe` inr
+          FROM `ingredient_has_recipe` inr
           LEFT JOIN `ingredient_unity` inu ON inu.id=inr.ingredient_unity_id
           LEFT JOIN `ingredient` ing ON ing.id=inr.ingredient_id
           GROUP BY inr.recipe_id
@@ -59,7 +59,7 @@ class Recipe{
             GROUP_CONCAT(cat.category SEPARATOR '|||') AS categories,
             rc.recipe_id AS rc_recipe_id
           FROM `category` cat
-          LEFT JOIN `recipe_category` rc ON rc.category_id=cat.id
+          LEFT JOIN `recipe_has_category` rc ON rc.category_id=cat.id
           GROUP BY rc.recipe_id
         ) cat ON cat.rc_recipe_id=r.id
         LEFT JOIN (
@@ -76,16 +76,29 @@ class Recipe{
           GROUP BY com.recipe_id
         ) com ON com.com_recipe_id=r.id
         LEFT JOIN (
-          -- instructions
+          -- sub_recipe
           SELECT
-            GROUP_CONCAT(ins.id SEPARATOR '|||') AS instructions_ids,
-            GROUP_CONCAT(ins.text_content SEPARATOR '|||') AS instructions,
-            GROUP_CONCAT(ins.image_url SEPARATOR '|||') AS instructions_image_url,
-            ins.recipe_id
-          FROM `instruction` ins
-          GROUP BY ins.recipe_id
-          ORDER BY ins.instruction_number
-        ) ins ON ins.recipe_id=r.id
+            GROUP_CONCAT(subr.id SEPARATOR '|||') AS sub_recipes_ids,
+            GROUP_CONCAT(subr.title SEPARATOR '|||') AS sub_recipes_titles,
+            GROUP_CONCAT(subr.image_url SEPARATOR '|||') AS sub_recipes_image_url,
+            GROUP_CONCAT(subr.preparation_time SEPARATOR '|||') AS sub_recipes_preparations_times,
+            ins.*,
+            subr.recipe_id
+          FROM `sub_recipe` subr
+          LEFT JOIN (
+            -- instructions
+            SELECT
+              GROUP_CONCAT(ins.id SEPARATOR '|||') AS instructions_ids,
+              GROUP_CONCAT(ins.text_content SEPARATOR '|||') AS instructions,
+              GROUP_CONCAT(ins.image_url SEPARATOR '|||') AS instructions_image_url,
+              ins.sub_recipe_id
+            FROM `instruction` ins
+            GROUP BY ins.sub_recipe_id
+            ORDER BY ins.instruction_number
+          ) ins ON ins.sub_recipe_id=subr.id
+          GROUP BY subr.recipe_id
+          ORDER BY subr.sub_recipe_number
+        ) subr ON subr.recipe_id=r.id
         WHERE id=$id;
       ";
       $query = $db->query($sql);
