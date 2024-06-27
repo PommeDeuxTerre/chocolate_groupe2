@@ -36,7 +36,7 @@ class Recipe{
 
   public static function getRecipeById(PDO $db, int $id):self|string{
     try {
-      $sql = "
+      $sqlRecipe = "
         SELECT * FROM `recipe` r
         LEFT JOIN (
           -- ingredients
@@ -101,7 +101,18 @@ class Recipe{
         ) subr ON subr.recipe_id=r.id
         WHERE id=$id;
       ";
-      $query = $db->query($sql);
+      $sqlSubRecipe = "
+        SELECT 
+          GROUP_CONCAT(ins.id SEPARATOR '|||') AS instructions_ids,
+          GROUP_CONCAT(ins.text_content SEPARATOR '|||') AS instructions,
+          GROUP_CONCAT(ins.image_url SEPARATOR '|||') AS instructions_image_url
+        FROM `sub_recipe` AS subr
+        LEFT JOIN `instruction` AS ins ON ins.sub_recipe_id = subr.id
+        WHERE subr.id = 1
+        GROUP BY ins.id
+        ORDER BY ins.instruction_number;
+      ";
+      $query = $db->query($sqlRecipe);
       $result = $query->fetch(PDO::FETCH_ASSOC);
       $query->closeCursor();
       /*get returned values*/
@@ -132,6 +143,8 @@ class Recipe{
       $instructions_ids = $result["instructions_ids"] ? explode("|||", $result["instructions_ids"]) : [];
       $instructions_texts = $result["instructions"] ? explode("|||", $result["instructions"]) : [];
       $instructions_imgs = $result["instructions_image_url"] ? explode("|||", $result["instructions_image_url"]) : [];
+
+      /* sub_recipe request */
 
       /*put the returned values in objects*/
       /*ingredients*/
