@@ -1,6 +1,7 @@
 <?php
 
 require_once("SubRecipe.php");
+require_once("Instruction.php");
 require_once("Ingredient.php");
 require_once("Comment.php");
 require_once("Category.php");
