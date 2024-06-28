@@ -37,73 +37,57 @@ class Recipe{
   }
 
   public static function getRecipeById(PDO $db, int $id):self|string{
+    $sql = "
+      SELECT * FROM `recipe` r
+      LEFT JOIN (
+        -- ingredients
+        SELECT
+          GROUP_CONCAT(ing.id SEPARATOR '|||') AS ingredients_ids,
+          GROUP_CONCAT(IFNULL(inu.unit, 'null') SEPARATOR '|||') AS ingredients_units,
+          GROUP_CONCAT(ing.ingredient SEPARATOR '|||') AS ingredients,
+          GROUP_CONCAT(ing.image_url SEPARATOR '|||') AS ingredients_images,
+          GROUP_CONCAT(inr.quantity SEPARATOR '|||') AS ingredients_quantities,
+          inr.recipe_id AS inr_recipe_id
+        FROM `ingredient_has_recipe` inr
+        LEFT JOIN `ingredient_unity` inu ON inu.id=inr.ingredient_unity_id
+        LEFT JOIN `ingredient` ing ON ing.id=inr.ingredient_id
+        GROUP BY inr.recipe_id
+      ) ing ON ing.inr_recipe_id=r.id
+      LEFT JOIN (
+        -- categories
+        SELECT
+          GROUP_CONCAT(cat.id SEPARATOR '|||') AS categories_ids,
+          GROUP_CONCAT(cat.category SEPARATOR '|||') AS categories,
+          rc.recipe_id AS rc_recipe_id
+        FROM `category` cat
+        LEFT JOIN `recipe_has_category` rc ON rc.category_id=cat.id
+        GROUP BY rc.recipe_id
+      ) cat ON cat.rc_recipe_id=r.id
+      LEFT JOIN (
+        -- comments
+        SELECT
+          GROUP_CONCAT(com.id SEPARATOR '|||') AS comments_ids,
+          GROUP_CONCAT(com.comment SEPARATOR '|||') AS comments,
+          GROUP_CONCAT(com.created_date SEPARATOR '|||') AS comments_created_dates,
+          GROUP_CONCAT(com.stars SEPARATOR '|||') AS comments_stars,
+          GROUP_CONCAT(u.name SEPARATOR '|||') AS comments_username,
+          com.recipe_id AS com_recipe_id
+        FROM `comment` com
+        LEFT JOIN `user` u ON com.user_id=u.id
+        GROUP BY com.recipe_id
+      ) com ON com.com_recipe_id=r.id
+      WHERE id=$id;
+    ";
     try {
-      $sql = "
-        SELECT * FROM `recipe` r
-        LEFT JOIN (
-          -- ingredients
-          SELECT
-            GROUP_CONCAT(ing.id SEPARATOR '|||') AS ingredients_ids,
-            GROUP_CONCAT(inu.unit SEPARATOR '|||') AS ingredients_units,
-            GROUP_CONCAT(ing.ingredient SEPARATOR '|||') AS ingredients,
-            GROUP_CONCAT(ing.image_url SEPARATOR '|||') AS ingredients_images,
-            GROUP_CONCAT(inr.quantity SEPARATOR '|||') AS ingredients_quantities,
-            inr.recipe_id AS inr_recipe_id
-          FROM `ingredient_has_recipe` inr
-          LEFT JOIN `ingredient_unity` inu ON inu.id=inr.ingredient_unity_id
-          LEFT JOIN `ingredient` ing ON ing.id=inr.ingredient_id
-          GROUP BY inr.recipe_id
-        ) ing ON ing.inr_recipe_id=r.id
-        LEFT JOIN (
-          -- categories
-          SELECT
-            GROUP_CONCAT(cat.id SEPARATOR '|||') AS categories_ids,
-            GROUP_CONCAT(cat.category SEPARATOR '|||') AS categories,
-            rc.recipe_id AS rc_recipe_id
-          FROM `category` cat
-          LEFT JOIN `recipe_has_category` rc ON rc.category_id=cat.id
-          GROUP BY rc.recipe_id
-        ) cat ON cat.rc_recipe_id=r.id
-        LEFT JOIN (
-          -- comments
-          SELECT
-            GROUP_CONCAT(com.id SEPARATOR '|||') AS comments_ids,
-            GROUP_CONCAT(com.comment SEPARATOR '|||') AS comments,
-            GROUP_CONCAT(com.created_date SEPARATOR '|||') AS comments_created_dates,
-            GROUP_CONCAT(com.stars SEPARATOR '|||') AS comments_stars,
-            GROUP_CONCAT(u.name SEPARATOR '|||') AS comments_username,
-            com.recipe_id AS com_recipe_id
-          FROM `comment` com
-          LEFT JOIN `user` u ON com.user_id=u.id
-          GROUP BY com.recipe_id
-        ) com ON com.com_recipe_id=r.id
-        WHERE id=$id;
-        -- sub_recipe
-        SELECT 
-          subr.*,
-          GROUP_CONCAT(ins.id ORDER BY ins.instruction_number SEPARATOR '|||') AS instructions_ids,
-          GROUP_CONCAT(ins.text_content ORDER BY ins.instruction_number SEPARATOR '|||') AS instructions,
-          GROUP_CONCAT(ins.image_url ORDER BY ins.instruction_number SEPARATOR '|||') AS instructions_image_url
-        FROM `sub_recipe` AS subr
-        LEFT JOIN `instruction` AS ins ON ins.sub_recipe_id = subr.id
-        WHERE subr.recipe_id = $id
-        GROUP BY subr.id
-        ORDER BY subr.sub_recipe_number;
-      ";
       $query = $db->query($sql);
-      /**
-       * Index 0 = recipe request SQL
-       * Index 1 and more = sub_recipe
-       */
-      $result = $query->fetchAll(PDO::FETCH_ASSOC);
+      $recipe = $query->fetch(PDO::FETCH_ASSOC);
       $query->closeCursor();
+      if (!$recipe["id"]) return "recette non trouvée";
     }catch (Exception $e){
       return $e->getMessage();
     }
     /*get returned values*/
     /* recipe */
-    $recipe = array_shift($result);
-    if (!$recipe["id"])return "recette non trouvée";
     $recipe_id = $recipe["id"];
     $recipe_name = $recipe["name"];
     $recipe_nb_people = $recipe["nb_people"];
@@ -142,8 +126,32 @@ class Recipe{
     for ($i=0;$i<sizeof($comments_ids);$i++){
       array_push($recipe_comments, new Comment($comments_ids[$i], $comments_texts[$i], $comments_created_dates[$i], $comments_stars[$i], $comments_usernames[$i]));
     }
+
+    /* sub_recipe */
+
+    $sql = "
+      -- sub_recipe
+      SELECT 
+        subr.*,
+        GROUP_CONCAT(ins.id ORDER BY ins.instruction_number SEPARATOR '|||') AS instructions_ids,
+        GROUP_CONCAT(ins.text_content ORDER BY ins.instruction_number SEPARATOR '|||') AS instructions,
+        GROUP_CONCAT(IFNULL(ins.image_url, 'null') ORDER BY ins.instruction_number SEPARATOR '|||') AS instructions_image_url
+      FROM `sub_recipe` AS subr
+      LEFT JOIN `instruction` AS ins ON ins.sub_recipe_id = subr.id
+      WHERE subr.recipe_id = $id
+      GROUP BY subr.id
+      ORDER BY subr.sub_recipe_number;
+    ";
+
+    try {
+      $query = $db->query($sql);
+      $result = $query->fetchAll(PDO::FETCH_ASSOC);
+      $query->closeCursor();
+    }catch (Exception $e){
+      return $e->getMessage();
+    }
     
-    // $result is the sub_recipes here
+    // $result contains the sub_recipes SQL
     $sub_recipes = [];
     for ($i=0;$i<sizeof($result);$i++){
       $sub_recipe = $result[$i];
@@ -151,12 +159,10 @@ class Recipe{
       $instructions_ids = $sub_recipe["instructions_ids"] ? explode(self::SEPARATOR_DB, $sub_recipe["instructions_ids"]) : [];
       $instructions_texts = $sub_recipe["instructions"] ? explode(self::SEPARATOR_DB, $sub_recipe["instructions"]) : [];
       $instructions_imgs = $sub_recipe["instructions_image_url"] ? explode(self::SEPARATOR_DB, $sub_recipe["instructions_image_url"]) : [];
-      
       $sub_recipe_instructions = [];
       for ($i=0;$i<sizeof($instructions_ids);$i++){
         array_push($sub_recipe_instructions, new Instruction($instructions_ids[$i], $instructions_texts[$i], $instructions_imgs[$i]));
       }
-
       array_push($sub_recipes, new SubRecipe($sub_recipe["id"], $sub_recipe["title"], $sub_recipe["image_url"], $sub_recipe["preparation_time"], $sub_recipe_instructions));
     }
 
